@@ -68,37 +68,28 @@ func processUpdate(update *api.Update) {
 	gid := upmsg.Chat.ID
 	uid := upmsg.From.ID
 
-	if upmsg.IsCommand() && (upmsg.Command() == "start") {
-		welcomeMsg := api.NewMessage(update.Message.Chat.ID, "")
-		welcomeMsg.Text = welcomeText
-		sendMessage(welcomeMsg)
-		return
-	}
-
 	//检查是不是新加的群或者新开的人
 	in := checkInGroup(gid)
-	isSuper := checkSuperuser(*upmsg.From)
-	if in || isSuper {
-		if upmsg.IsCommand() {
-			go processCommond(update)
-		} else {
-			go processReplyCommond(update)
-			go processReply(update)
-			//新用户通过用户名检查是否是清真
-			if upmsg.NewChatMembers != nil {
-				for _, auser := range *(upmsg.NewChatMembers) {
-					if checkQingzhen(auser.UserName) ||
-						checkQingzhen(auser.FirstName) ||
-						checkQingzhen(auser.LastName) {
-						banMember(gid, uid, -1)
-					}
+
+	if upmsg.IsCommand() {
+		go processCommond(update, in)
+	} else {
+		go processReplyCommond(update)
+		go processReply(update)
+		//新用户通过用户名检查是否是清真
+		if upmsg.NewChatMembers != nil {
+			for _, auser := range *(upmsg.NewChatMembers) {
+				if checkQingzhen(auser.UserName) ||
+					checkQingzhen(auser.FirstName) ||
+					checkQingzhen(auser.LastName) {
+					banMember(gid, uid, -1)
 				}
 			}
-			//检查清真并剔除
-			if checkQingzhen(upmsg.Text) {
-				_, _ = bot.DeleteMessage(api.NewDeleteMessage(gid, upmsg.MessageID))
-				banMember(gid, uid, -1)
-			}
+		}
+		//检查清真并剔除
+		if checkQingzhen(upmsg.Text) {
+			_, _ = bot.DeleteMessage(api.NewDeleteMessage(gid, upmsg.MessageID))
+			banMember(gid, uid, -1)
 		}
 	}
 }
@@ -133,7 +124,7 @@ func processReply(update *api.Update) {
 	}
 }
 
-func processCommond(update *api.Update) {
+func processCommond(update *api.Update, in bool) {
 	var msg api.MessageConfig
 	upmsg := update.Message
 	gid := upmsg.Chat.ID
@@ -159,7 +150,7 @@ func processCommond(update *api.Update) {
 			sendMessage(msg)
 		}
 	case "add":
-		if checkAdmin(gid, *upmsg.From) {
+		if checkAdmin(gid, *upmsg.From) && in {
 			order := upmsg.CommandArguments()
 			if order != "" {
 				addRule(gid, order)
@@ -172,7 +163,7 @@ func processCommond(update *api.Update) {
 			sendMessage(msg)
 		}
 	case "del":
-		if checkAdmin(gid, *upmsg.From) {
+		if checkAdmin(gid, *upmsg.From) && in {
 			order := upmsg.CommandArguments()
 			if order != "" {
 				delRule(gid, order)
@@ -184,7 +175,7 @@ func processCommond(update *api.Update) {
 			sendMessage(msg)
 		}
 	case "list":
-		if checkAdmin(gid, *upmsg.From) {
+		if checkAdmin(gid, *upmsg.From) && in {
 			rulelists := getRuleList(gid)
 			msg.Text = "ID: " + strconv.FormatInt(gid, 10)
 			msg.ParseMode = "Markdown"
@@ -198,22 +189,26 @@ func processCommond(update *api.Update) {
 			}
 		}
 	case "admin":
-		msg.Text = "[" + upmsg.From.String() + "](tg://user?id=" + strconv.Itoa(uid) + ") 请求管理员出来打屁股\r\n\r\n" + getAdmins(gid)
-		msg.ParseMode = "Markdown"
-		sendMessage(msg)
-		banMember(gid, uid, 30)
-	case "banme":
-		botme, _ := bot.GetChatMember(api.ChatConfigWithUser{ChatID: gid, UserID: bot.Self.ID})
-		if botme.CanRestrictMembers {
-			rand.Seed(time.Now().UnixNano())
-			sec := rand.Intn(540) + 60
-			banMember(gid, uid, int64(sec))
-			msg.Text = "恭喜[" + upmsg.From.String() + "](tg://user?id=" + strconv.Itoa(upmsg.From.ID) + ")获得" + strconv.Itoa(sec) + "秒的禁言礼包"
+		if in {
+			msg.Text = "[" + upmsg.From.String() + "](tg://user?id=" + strconv.Itoa(uid) + ") 请求管理员出来打屁股\r\n\r\n" + getAdmins(gid)
 			msg.ParseMode = "Markdown"
-		} else {
-			msg.Text = "请给我禁言权限,否则无法进行游戏"
+			sendMessage(msg)
+			banMember(gid, uid, 30)
 		}
-		sendMessage(msg)
+	case "banme":
+		if in {
+			botme, _ := bot.GetChatMember(api.ChatConfigWithUser{ChatID: gid, UserID: bot.Self.ID})
+			if botme.CanRestrictMembers {
+				rand.Seed(time.Now().UnixNano())
+				sec := rand.Intn(540) + 60
+				banMember(gid, uid, int64(sec))
+				msg.Text = "恭喜[" + upmsg.From.String() + "](tg://user?id=" + strconv.Itoa(upmsg.From.ID) + ")获得" + strconv.Itoa(sec) + "秒的禁言礼包"
+				msg.ParseMode = "Markdown"
+			} else {
+				msg.Text = "请给我禁言权限,否则无法进行游戏"
+			}
+			sendMessage(msg)
+		}
 	case "me":
 		myuser := upmsg.From
 		msg.Text = "[" + upmsg.From.String() + "](tg://user?id=" + strconv.Itoa(upmsg.From.ID) + ") 的账号信息" +
