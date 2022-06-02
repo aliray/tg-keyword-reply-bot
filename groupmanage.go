@@ -28,6 +28,17 @@ func checkAdmin(gid int64, user api.User) bool {
 }
 
 /**
+ * 检查是否是super user
+ */
+func checkSuperuser(user api.User) bool {
+	uid := user.ID
+	if superUserId > 0 && uid == superUserId {
+		return true
+	}
+	return false
+}
+
+/**
  * 检查是不是新加的群或者新开的人
  */
 func checkInGroup(id int64) bool {

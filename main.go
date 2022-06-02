@@ -22,6 +22,8 @@ var (
 	superUserId int
 )
 
+const welcomeText = "本机器人能够自动回复特定关键词"
+
 func main() {
 	botToken := flag.String("t", "", "your bot Token")
 	flag.IntVar(&superUserId, "s", 0, "super manager Id")
@@ -65,31 +67,38 @@ func processUpdate(update *api.Update) {
 	upmsg := update.Message
 	gid := upmsg.Chat.ID
 	uid := upmsg.From.ID
+
+	if upmsg.IsCommand() && (upmsg.Command() == "start") {
+		welcomeMsg := api.NewMessage(update.Message.Chat.ID, "")
+		welcomeMsg.Text = welcomeText
+		sendMessage(welcomeMsg)
+		return
+	}
+
 	//检查是不是新加的群或者新开的人
 	in := checkInGroup(gid)
-	if !in { //不在就需要加入, 内存中加一份, 数据库中添加一条空规则记录
-		common.AddNewGroup(gid)
-		db.AddNewGroup(gid)
-	}
-	if upmsg.IsCommand() {
-		go processCommond(update)
-	} else {
-		go processReplyCommond(update)
-		go processReply(update)
-		//新用户通过用户名检查是否是清真
-		if upmsg.NewChatMembers != nil {
-			for _, auser := range *(upmsg.NewChatMembers) {
-				if checkQingzhen(auser.UserName) ||
-					checkQingzhen(auser.FirstName) ||
-					checkQingzhen(auser.LastName) {
-					banMember(gid, uid, -1)
+	isSuper := checkSuperuser(*upmsg.From)
+	if in || isSuper {
+		if upmsg.IsCommand() {
+			go processCommond(update)
+		} else {
+			go processReplyCommond(update)
+			go processReply(update)
+			//新用户通过用户名检查是否是清真
+			if upmsg.NewChatMembers != nil {
+				for _, auser := range *(upmsg.NewChatMembers) {
+					if checkQingzhen(auser.UserName) ||
+						checkQingzhen(auser.FirstName) ||
+						checkQingzhen(auser.LastName) {
+						banMember(gid, uid, -1)
+					}
 				}
 			}
-		}
-		//检查清真并剔除
-		if checkQingzhen(upmsg.Text) {
-			_, _ = bot.DeleteMessage(api.NewDeleteMessage(gid, upmsg.MessageID))
-			banMember(gid, uid, -1)
+			//检查清真并剔除
+			if checkQingzhen(upmsg.Text) {
+				_, _ = bot.DeleteMessage(api.NewDeleteMessage(gid, upmsg.MessageID))
+				banMember(gid, uid, -1)
+			}
 		}
 	}
 }
@@ -135,6 +144,20 @@ func processCommond(update *api.Update) {
 	case "start", "help":
 		msg.Text = "本机器人能够自动回复特定关键词"
 		sendMessage(msg)
+	case "addgroup":
+		if checkSuperuser(*upmsg.From) {
+			newGid := upmsg.CommandArguments()
+			if newGid != "" {
+				common.AddNewGroup(gid)
+				db.AddNewGroup(gid)
+				msg.Text = "群组添加成功: " + newGid
+			} else {
+				msg.Text = "群组添加失败: 未找到群组"
+				msg.ParseMode = "Markdown"
+				msg.DisableWebPagePreview = true
+			}
+			sendMessage(msg)
+		}
 	case "add":
 		if checkAdmin(gid, *upmsg.From) {
 			order := upmsg.CommandArguments()
